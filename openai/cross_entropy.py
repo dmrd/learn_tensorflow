@@ -3,16 +3,20 @@ import math
 import numpy as np
 import gym
 
+# TODO: arg parser
 if len(sys.argv) > 1:
     ENV = sys.argv[1]
-    if len(sys.argv) == 3:
-        exp_name = sys.argv[2]
 else:
     ENV = "CartPole-v0"
+
+if len(sys.argv) == 3:
+    exp_name = sys.argv[2]
+else:
     exp_name = None
 
 class MLPAgent(object):
-    def __init__(self, layer_dims, ):
+    def __init__(self, layer_dims, categorical=True):
+        self.categorical = categorical
         self.layer_dims = layer_dims
         self.weights = []
         for (i, dim) in enumerate(layer_dims[1:]):
@@ -20,9 +24,10 @@ class MLPAgent(object):
         self.nparams = sum(x.size for x in self.weights)
 
     def forward(self, x):
-        for W in self.weights:
+        for W in self.weights[:-1]:
             x = np.tanh(np.dot(x, W))
-        return x
+            #x = np.maximum(np.dot(x, W), 0)
+        return np.dot(x, self.weights[-1])
 
     """
     Get the params as a single vector.  Concatenated weight matrices
@@ -54,7 +59,9 @@ class MLPAgent(object):
     """
     def step(self, state):
         y = self.forward(state)
-        return np.argmax(y)
+        if self.categorical:
+            return np.argmax(y)
+        return y
 
 
 def simulate(env, agent, max_steps, render=False):
@@ -77,7 +84,7 @@ def eval_agent(env, agent, max_steps):
         return simulate(env, agent, max_steps, render=render)
     return eval_params
 
-def cem(f, iters=10, n_samples=100, keep_percent=0.2, std_noise=0.0, noise_decay=1):
+def cem(f, iters=10, n_samples=100, keep_percent=0.2, std_noise=0.5, noise_decay=0.9):
     means = np.zeros(agent.nparams)
     stds = np.ones(agent.nparams)
 
@@ -97,9 +104,17 @@ def cem(f, iters=10, n_samples=100, keep_percent=0.2, std_noise=0.0, noise_decay
             generation + 1, rewards.mean(), rewards[best_idx].mean()))
 
 env = gym.make(ENV)
-agent = MLPAgent([sum(env.observation_space.shape), 10, 5, env.action_space.n])
+
+if isinstance(env.action_space, gym.spaces.Discrete):
+    categorical = True
+    out_dim = env.action_space.n
+else:
+    categorical = False
+    out_dim = env.action_space.shape[0]
+
+agent = MLPAgent([env.observation_space.shape[0], 10, 10, 5, out_dim], categorical=categorical)
 if exp_name:
     env.monitor.start(exp_name)
-cem(eval_agent(env, agent, 200), iters=30)
+cem(eval_agent(env, agent, 200), iters=1000)
 if exp_name:
     env.monitor.close()
